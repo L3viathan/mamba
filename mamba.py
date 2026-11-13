@@ -20,10 +20,54 @@ KEY_RIGHT = ESC + "[C"
 
 SPIDER = "\N{SPIDER}\N{VARIATION SELECTOR-16}"
 SNAKE_HEAD = "\N{FROG FACE}"
-SNAKE_BODY_1 = "\N{LARGE GREEN SQUARE}"
-SNAKE_BODY_2 = "\N{LARGE RED SQUARE}"
-SNAKE_BODY_3 = "\N{LARGE YELLOW SQUARE}"
 HOLE = "\N{HOLE}\N{VARIATION SELECTOR-16}"
+# SNAKE_BODY = {
+#     0: HOLE,
+#     ((-1+0j), -1j): "┓ ",  # up-left
+#     ((-1+0j), 1j): "┛ ",  # down-left
+#     (-1j, (-1+0j)): "┗━",  # left-up
+#     (-1j, -1j): "┃ ",  # up
+#     ((1+0j), (1+0j)): "━━", # right
+#     (1j, 1j): "┃ ",  # down
+#     (1j, (-1+0j)): "┏━",  # left-down
+#     (-1j, (1+0j)): "┛ ",  # right-up
+#     ((-1+0j), (-1+0j)): "━━", # left
+#     ((1+0j), 1j): "┗━",  # down-right
+#     ((1+0j), -1j): "┏━",  # up-right
+#     (1j, (1+0j)): "┓ ",  # right-down
+# }
+SNAKE_BODY = {
+    0: HOLE,
+    ((-1+0j), -1j): "█◣",  # up-left
+    ((-1+0j), 1j): "█◤",  # down-left
+    (-1j, (-1+0j)): "◥█",  # left-up
+    (-1j, -1j): "██",  # up
+    ((1+0j), (1+0j)): "██", # right
+    (1j, 1j): "██",  # down
+    (1j, (-1+0j)): "◢█",  # left-down
+    (-1j, (1+0j)): "█◤",  # right-up
+    ((-1+0j), (-1+0j)): "██", # left
+    ((1+0j), 1j): "◥█",  # down-right
+    ((1+0j), -1j): "◢█",  # up-right
+    (1j, (1+0j)): "█◣",  # right-down
+}
+
+def red(msg):
+    return f"\x1b[31m{msg}\x1b[0m"
+
+def green(msg):
+    return f"\x1b[32m{msg}\x1b[0m"
+
+def yellow(msg):
+    return f"\x1b[33m{msg}\x1b[0m"
+
+def blue(msg):
+    return f"\x1b[34m{msg}\x1b[0m"
+
+def pink(msg):
+    return f"\x1b[35m{msg}\x1b[0m"
+
+
 WALL = "\N{BRICK}"
 THREAD = "\N{SPIDER WEB}\N{VARIATION SELECTOR-16}"
 WEB = "\N{MILKY WAY}"
@@ -45,40 +89,20 @@ class Win(Exception):
     pass
 
 
-class SingleCharInput:
-    def __init__(self):
-        self._old = None
-
-    def __enter__(self):
-        self._old = termios.tcgetattr(sys.stdin)
-        self._setup()
-        return self
-
-    def _setup(self):
-        cbreak = termios.tcgetattr(sys.stdin)
-        cbreak[3] &= ~(termios.ECHO | termios.ICANON)
-        cbreak[6][termios.VMIN] = 1
-        cbreak[6][termios.VTIME] = 0
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, cbreak)
-        print("\x1b[?25l", flush=True, end="")
-
-    def _teardown(self):
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self._old)
+@contextlib.contextmanager
+def single_char_input():
+    old = termios.tcgetattr(sys.stdin)
+    cbreak = termios.tcgetattr(sys.stdin)
+    cbreak[3] &= ~(termios.ECHO | termios.ICANON)
+    cbreak[6][termios.VMIN] = 1
+    cbreak[6][termios.VTIME] = 0
+    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, cbreak)
+    print("\x1b[?25l", flush=True, end="")
+    try:
+        yield
+    finally:
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old)
         print("\x1b[?25h", flush=True, end="")
-
-    @contextlib.contextmanager
-    def pause(self):
-        if not self._old:
-            raise ValueError()
-        self._teardown()
-        try:
-            yield
-        finally:
-            self._setup()
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self._teardown()
-        self._old = None
 
 
 def get_char():
@@ -114,14 +138,10 @@ def print_at(pos, text):
     esc(f"[{int(pos.imag)+1};{(int(pos.real)*2)+1}H{text}")  # terminal coords are 1-based
 
 
-# def print_at(pos, text):
-#     print("at", pos.imag+1, (pos.real)+1, text)
-
-
 class Snake:
-    def __init__(self, starting_position, *, variant=SNAKE_BODY_1, lookahead=0, speed=2, prey_weight=5):
+    def __init__(self, starting_position, *, color=green, lookahead=0, speed=2, prey_weight=5):
         self.game = None
-        self.variant = variant
+        self.color = color
         self.lookahead = lookahead
         self.speed = speed
         self.prey_weight = prey_weight
@@ -133,22 +153,26 @@ class Snake:
             if self.body:
                 print_at(self.body[0], HOLE)
                 old_tail_pos = self.body.pop()
-                #self.game.reset_at(old_tail_pos)  # TODO test
-                print_at(old_tail_pos, " ")
+                print_at(old_tail_pos, "  ")
             else:
                 raise Win
             return
         new_position = self.choose_position()
         if new_position is None:
             # Nowhere to go -> reverse direction
-            print_at(self.body[0], self.variant)
+            print_at(self.body[0], "  ")
             print_at(self.body[-1], SNAKE_HEAD)
             self.body.reverse()
             return
         if len(self.body) >= self.max_length:
             old_tail_pos = self.body.pop()
-            print_at(old_tail_pos, " ")
-        print_at(self.body[0], self.variant)
+            print_at(old_tail_pos, "  ")
+
+        if len(self.body) > 1:
+            neck_type = (new_position - self.body[0], self.body[0] - self.body[1])
+        else:
+            neck_type = 0
+        print_at(self.body[0], self.color(SNAKE_BODY[neck_type]))
         self.body.appendleft(new_position)
         print_at(self.body[0], SNAKE_HEAD)
 
@@ -405,44 +429,44 @@ LEVELS = [
         spider=Spider(speed=3),
         snakes=[
             Snake(7+7j, speed=3, lookahead=10, prey_weight=10),
-            Snake(3+3j, variant=SNAKE_BODY_2, speed=4, prey_weight=3),
+            Snake(3+3j, color=red, speed=4, prey_weight=3),
         ],
     ),
     Level(
         spider=Spider(speed=4),
         snakes=[
-            Snake(7+7j, variant=SNAKE_BODY_3, speed=3, lookahead=10, prey_weight=10),
-            Snake(3+3j, variant=SNAKE_BODY_2, speed=2, prey_weight=3),
+            Snake(7+7j, color=yellow, speed=3, lookahead=10, prey_weight=10),
+            Snake(3+3j, color=red, speed=2, prey_weight=3),
         ],
     ),
     Level(
         spider=Spider(),
         snakes=[
             Snake(7+7j, speed=3, lookahead=5),
-            Snake(9+11j, variant=SNAKE_BODY_2, speed=2, prey_weight=1),
-            Snake(3+4j, variant=SNAKE_BODY_3, lookahead=10, speed=4, prey_weight=10),
+            Snake(9+11j, color=red, speed=2, prey_weight=1),
+            Snake(3+4j, color=yellow, lookahead=10, speed=4, prey_weight=10),
         ],
     ),
     Level(
         spider=Spider(),
         snakes=[
             Snake(7+7j, speed=1, lookahead=5),
-            Snake(9+11j, variant=SNAKE_BODY_2, speed=2, prey_weight=1),
-            Snake(3+4j, variant=SNAKE_BODY_3, lookahead=10, speed=4, prey_weight=10),
+            Snake(9+11j, color=red, speed=2, prey_weight=1),
+            Snake(3+4j, color=yellow, lookahead=10, speed=4, prey_weight=10),
         ],
     ),
     Level(
         spider=Spider(speed=1),
         snakes=[
             Snake(7+7j, speed=1, lookahead=5),
-            Snake(9+11j, variant=SNAKE_BODY_2, speed=1, prey_weight=1),
-            Snake(3+4j, variant=SNAKE_BODY_3, lookahead=10, speed=1, prey_weight=10),
+            Snake(9+11j, color=red, speed=1, prey_weight=1),
+            Snake(3+4j, color=yellow, lookahead=10, speed=1, prey_weight=10),
         ],
     ),
 ]
 
 
-with SingleCharInput():
+with single_char_input():
     try:
         for n, level in enumerate(LEVELS, start=1):
             clear()
