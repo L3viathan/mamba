@@ -7,6 +7,7 @@ import sys
 import termios
 import random
 import threading
+import textwrap
 from collections import deque
 from itertools import count
 from time import sleep, monotonic
@@ -36,21 +37,32 @@ HOLE = "\N{HOLE}\N{VARIATION SELECTOR-16}"
 #     ((1+0j), -1j): "┏━",  # up-right
 #     (1j, (1+0j)): "┓ ",  # right-down
 # }
-SNAKE_BODY = {
-    0: HOLE,
-    ((-1+0j), -1j): "█◣",  # up-left
-    ((-1+0j), 1j): "█◤",  # down-left
-    (-1j, (-1+0j)): "◥█",  # left-up
-    (-1j, -1j): "██",  # up
-    ((1+0j), (1+0j)): "██", # right
-    (1j, 1j): "██",  # down
-    (1j, (-1+0j)): "◢█",  # left-down
-    (-1j, (1+0j)): "█◤",  # right-up
-    ((-1+0j), (-1+0j)): "██", # left
-    ((1+0j), 1j): "◥█",  # down-right
-    ((1+0j), -1j): "◢█",  # up-right
-    (1j, (1+0j)): "█◣",  # right-down
-}
+
+def construct_snake_body(string):
+    string = textwrap.dedent(string).strip()
+    return {
+        0: HOLE,
+        ((-1+0j), -1j): string[4:6],  # up-left
+        ((-1+0j), 1j): string[18:20],  # down-left
+        (-1j, (-1+0j)): string[14:16],  # left-up
+        (-1j, -1j): string[7:9],  # up
+        ((1+0j), (1+0j)): string[2:4], # right
+        (1j, 1j): string[7:9],  # down
+        (1j, (-1+0j)): string[0:2],  # left-down
+        (-1j, (1+0j)): string[18:20],  # right-up
+        ((-1+0j), (-1+0j)): string[2:4], # left
+        ((1+0j), 1j): string[14:16],  # down-right
+        ((1+0j), -1j): string[0:2],  # up-right
+        (1j, (1+0j)): string[4:6],  # right-down
+    }
+
+SNAKE_BODY = construct_snake_body(
+    """
+    ◢████◣
+    ██  ██
+    ◥████◤
+    """
+)
 
 def red(msg):
     return f"\x1b[31m{msg}\x1b[0m"
